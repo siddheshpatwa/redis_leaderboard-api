@@ -1,0 +1,64 @@
+# services:
+#   api:
+#     build: .
+#     ports:
+#       - "3000:3000"
+#     depends_on:
+#       - redis
+#       - postgres
+
+#   worker:
+#     build: .
+#     command: npm run worker
+#     depends_on:
+#       - redis
+#       - postgres
+
+#   redis:
+#     image: redis:7
+
+#   postgres:
+#     image: postgres:16
+#     environment:
+#       POSTGRES_USER: admin
+#       POSTGRES_PASSWORD: admin
+#       POSTGRES_DB: leaderboard
+
+
+
+
+services:
+  api:
+    build: .
+    ports:
+      - "3000:3000"
+    depends_on:
+      - redis
+      - postgres
+    environment:
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      REDIS_URL: redis://redis:6379
+      DATABASE_URL: postgresql://admin:admin@postgres:5432/leaderboard
+
+  worker:
+    build: .
+    command: npm run worker
+    depends_on:
+      - redis
+      - postgres
+    environment:
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      REDIS_URL: redis://redis:6379
+      DATABASE_URL: postgresql://admin:admin@postgres:5432/leaderboard
+
+  redis:
+    image: redis:7
+
+  postgres:
+    image: postgres:16
+    environment:
+      POSTGRES_USER: admin
+      POSTGRES_PASSWORD: admin
+      POSTGRES_DB: leaderboard

@@ -3,27 +3,87 @@ import { Request, Response } from "express";
 import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
 import { redis } from "../config/redis";
-
+import { scoreQueue } from "../queue/score.queue";
+import { pool } from "../config/db";
 
 
 //  module.exports.
- const login = async (
+//  const login = async (
+//   req: Request,
+//   res: Response
+// ) => {
+//   try {
+//     const { email, password } = req.body;
+
+//     const userData = await redis.get(`user:${email}`);
+
+//     if (!userData) {
+//       return res.status(404).json({
+//         success: false,
+//         message: "User not found",
+//       });
+//     }
+
+//     const user = JSON.parse(userData);
+
+//     const isMatch = await bcrypt.compare(
+//       password,
+//       user.password
+//     );
+
+//     if (!isMatch) {
+//       return res.status(401).json({
+//         success: false,
+//         message: "Invalid credentials",
+//       });
+//     }
+
+//     const token = jwt.sign(
+//       {
+//         email: user.email,
+//       },
+//       process.env.JWT_SECRET as string,
+//       {
+//         expiresIn: "1d",
+//       }
+//     );
+
+//     return res.status(200).json({
+//       success: true,
+//       token,
+//     });
+//   } catch (error) {
+//     return res.status(500).json({
+//       success: false,
+//       message: "Internal server error",
+//     });
+//   }
+// };
+
+const login = async (
   req: Request,
   res: Response
 ) => {
   try {
     const { email, password } = req.body;
 
-    const userData = await redis.get(`user:${email}`);
+    const result = await pool.query(
+      `
+      SELECT *
+      FROM users
+      WHERE email = $1
+      `,
+      [email]
+    );
 
-    if (!userData) {
+    const user = result.rows[0];
+
+    if (!user) {
       return res.status(404).json({
         success: false,
         message: "User not found",
       });
     }
-
-    const user = JSON.parse(userData);
 
     const isMatch = await bcrypt.compare(
       password,
@@ -40,6 +100,7 @@ import { redis } from "../config/redis";
     const token = jwt.sign(
       {
         email: user.email,
+        id: user.id,
       },
       process.env.JWT_SECRET as string,
       {
@@ -51,6 +112,7 @@ import { redis } from "../config/redis";
       success: true,
       token,
     });
+
   } catch (error) {
     return res.status(500).json({
       success: false,
@@ -60,7 +122,56 @@ import { redis } from "../config/redis";
 };
 
 
- const register = async (
+//  const register = async (
+//   req: Request,
+//   res: Response
+// ) => {
+//   try {
+//     const { name, email, password } = req.body;
+
+//     if (!name || !email || !password) {
+//       return res.status(400).json({
+//         success: false,
+//         message: "All fields are required",
+//       });
+//     }
+
+//     const userExists = await redis.get(`user:${email}`);
+
+//     if (userExists) {
+//       return res.status(409).json({
+//         success: false,
+//         message: "User already exists",
+//       });
+//     }
+
+//     const hashedPassword = await bcrypt.hash(password, 10);
+
+//     const user = {
+//       name,
+//       email,
+//       password: hashedPassword,
+//     };
+
+//     await redis.set(
+//       `user:${email}`,
+//       JSON.stringify(user)
+//     );
+
+//     return res.status(201).json({
+//       success: true,
+//       message: "User registered successfully",
+//     });
+//   } catch (error) {
+//     return res.status(500).json({
+//       success: false,
+//       message: "Internal server error",
+//     });
+//   }
+// };
+
+
+const register = async (
   req: Request,
   res: Response
 ) => {
@@ -74,26 +185,39 @@ import { redis } from "../config/redis";
       });
     }
 
-    const userExists = await redis.get(`user:${email}`);
+    const existingUser = await pool.query(
+      `
+      SELECT id
+      FROM users
+      WHERE email = $1
+      `,
+      [email]
+    );
 
-    if (userExists) {
+    if (existingUser.rows.length > 0) {
       return res.status(409).json({
         success: false,
         message: "User already exists",
       });
     }
 
-    const hashedPassword = await bcrypt.hash(password, 10);
+    const hashedPassword = await bcrypt.hash(
+      password,
+      10
+    );
 
-    const user = {
-      name,
-      email,
-      password: hashedPassword,
-    };
-
-    await redis.set(
-      `user:${email}`,
-      JSON.stringify(user)
+    await pool.query(
+      `
+      INSERT INTO users
+      (name,email,password,score)
+      VALUES($1,$2,$3,$4)
+      `,
+      [
+        name,
+        email,
+        hashedPassword,
+        0,
+      ]
     );
 
     return res.status(201).json({
@@ -101,32 +225,108 @@ import { redis } from "../config/redis";
       message: "User registered successfully",
     });
   } catch (error) {
+    console.error(error);
+
     return res.status(500).json({
       success: false,
       message: "Internal server error",
     });
   }
 };
+// const getAllUsers = async (
+//   req: Request,
+//   res: Response
+// ) => {
+//   try {
+//     const keys = await redis.keys("user:*");
+
+//     const users = await Promise.all(
+//       keys.map(async (key) => {
+//         const user = await redis.get(key);
+//         return user ? JSON.parse(user) : null;
+//       })
+//     );
+
+//     return res.status(200).json({
+//       success: true,
+//       count: users.length,
+//       users,
+//     });
+//   } catch (error) {
+//     return res.status(500).json({
+//       success: false,
+//       message: "Internal Server Error",
+//     });
+//   }
+// };
+
+// const addScore = async (req: Request, res: Response) => {
+//   try {
+//     const { email, score } = req.body;
+//         await scoreQueue.add("update-score", {
+//       email,
+//       score,
+//     });
+
+//     const userData = await redis.get(`user:${email}`);
+
+//     if (!userData) {
+//       return res.status(404).json({
+//         success: false,
+//         message: "User not found",
+//       });
+//     }
+
+//     const user = JSON.parse(userData);
+
+//     const newScore = (user.score || 0) + Number(score);
+
+//     // update user object (optional, for profile)
+//     user.score = newScore;
+
+//     await redis.set(`user:${email}`, JSON.stringify(user));
+
+//     // THIS is the important part 👇
+//     await redis.zadd("leaderboard", newScore, email);
+
+//     return res.status(200).json({
+//       success: true,
+//       message: "Score updated",
+//     });
+//   } catch (error) {
+//     return res.status(500).json({
+//       success: false,
+//       message: "Internal server error",
+//     });
+//   }
+// };
+
 
 const getAllUsers = async (
   req: Request,
   res: Response
 ) => {
   try {
-    const keys = await redis.keys("user:*");
 
-    const users = await Promise.all(
-      keys.map(async (key) => {
-        const user = await redis.get(key);
-        return user ? JSON.parse(user) : null;
-      })
+    const result = await pool.query(
+      `
+      SELECT
+        id,
+        name,
+        email,
+        score,
+        created_at
+      FROM users
+      ORDER BY id DESC
+      `
     );
 
     return res.status(200).json({
       success: true,
-      count: users.length,
-      users,
+      count: result.rows.length,
+      users: result.rows,
     });
+
   } catch (error) {
     return res.status(500).json({
       success: false,
@@ -139,31 +339,16 @@ const addScore = async (req: Request, res: Response) => {
   try {
     const { email, score } = req.body;
 
-    const userData = await redis.get(`user:${email}`);
-
-    if (!userData) {
-      return res.status(404).json({
-        success: false,
-        message: "User not found",
-      });
-    }
-
-    const user = JSON.parse(userData);
-
-    const newScore = (user.score || 0) + Number(score);
-
-    // update user object (optional, for profile)
-    user.score = newScore;
-
-    await redis.set(`user:${email}`, JSON.stringify(user));
-
-    // THIS is the important part 👇
-    await redis.zadd("leaderboard", newScore, email);
+    await scoreQueue.add("update-score", {
+      email,
+      score: Number(score),
+    });
 
     return res.status(200).json({
       success: true,
-      message: "Score updated",
+      message: "Score update queued",
     });
+
   } catch (error) {
     return res.status(500).json({
       success: false,
@@ -171,8 +356,7 @@ const addScore = async (req: Request, res: Response) => {
     });
   }
 };
-
- const getLeaderboard = async (req: Request, res: Response) => {
+const getLeaderboard = async (req: Request, res: Response) => {
   try {
     const topUsers = await redis.zrevrange(
       "leaderboard",

@@ -176,6 +176,7 @@ const register = async (
   res: Response
 ) => {
   try {
+    console.log("Register request body:", req.body);
     const { name, email, password } = req.body;
 
     if (!name || !email || !password) {
@@ -225,7 +226,7 @@ const register = async (
       message: "User registered successfully",
     });
   } catch (error) {
-    console.error(error);
+    console.log(error);
 
     return res.status(500).json({
       success: false,

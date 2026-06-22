@@ -2,6 +2,7 @@ import "./config/env";
 import express from "express";
 import authRoutes from "./routes/auth.routes";
 import { pool } from "./config/db";
+import "./worker/score.worker";
 
 const app = express();
 
